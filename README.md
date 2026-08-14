@@ -2,10 +2,20 @@
 
 一个适合全屏刷题场景的 macOS 悬浮倒计时工具。窗口可以覆盖在 WPS、预览等全屏应用上方，帮助使用者控制每道题的作答时间，并记录正误题号。
 
+<p align="center">
+  <img src="bear/Resources/bear-start.png" width="150" alt="自嘲熊：开始答题" />
+</p>
+
 项目包含两个版本：
 
 - **简洁版**：中性、严肃的紧凑界面，突出中央倒计时。
 - **自嘲熊版**：根据倒计时进度切换熊图和提示语，适合希望练题过程轻松一点的用户。
+
+### 自嘲熊的答题状态
+
+| 刚开始 | 过了一半 | 快到时间 |
+| :---: | :---: | :---: |
+| <img src="bear/Resources/bear-start.png" width="130" alt="先装从容的自嘲熊" /> | <img src="bear/Resources/bear-half.png" width="130" alt="意识到时间过去一半的自嘲熊" /> | <img src="bear/Resources/bear-urgent.png" width="130" alt="快到时间的自嘲熊" /> |
 
 ## 功能
 
