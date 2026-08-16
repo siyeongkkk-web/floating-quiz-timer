@@ -442,7 +442,7 @@ final class AppDelegate: NSObject, NSApplicationDelegate {
         let appMenuItem = NSMenuItem()
         mainMenu.addItem(appMenuItem)
         let appMenu = NSMenu()
-        let quitItem = NSMenuItem(title: "退出答题悬浮计时器", action: #selector(quit), keyEquivalent: "q")
+        let quitItem = NSMenuItem(title: "退出限时答题", action: #selector(quit), keyEquivalent: "q")
         quitItem.target = self
         appMenu.addItem(quitItem)
         appMenuItem.submenu = appMenu
@@ -452,7 +452,7 @@ final class AppDelegate: NSObject, NSApplicationDelegate {
     private func configureStatusItem() {
         statusItem = NSStatusBar.system.statusItem(withLength: NSStatusItem.squareLength)
         if let button = statusItem.button {
-            button.image = NSImage(systemSymbolName: "timer", accessibilityDescription: "答题计时器")
+            button.image = NSImage(systemSymbolName: "timer", accessibilityDescription: "限时答题")
         }
 
         let menu = NSMenu()

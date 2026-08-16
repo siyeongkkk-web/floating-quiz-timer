@@ -4,7 +4,7 @@ set -euo pipefail
 
 PROJECT_ROOT="${0:A:h:h}"
 OUTPUT_ROOT="$PROJECT_ROOT/dist"
-SERIOUS_APP="$OUTPUT_ROOT/答题悬浮计时器.app"
+SERIOUS_APP="$OUTPUT_ROOT/限时答题.app"
 MODULE_CACHE="${TMPDIR:-/private/tmp}/floating-quiz-timer-swift-cache"
 
 build_app_bundle() {
