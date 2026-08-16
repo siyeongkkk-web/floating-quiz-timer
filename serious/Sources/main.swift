@@ -29,6 +29,7 @@ final class FloatingTimerController: NSObject, NSComboBoxDelegate {
     private var correctQuestions: [Int] = []
     private var wrongQuestions: [Int] = []
     private var skippedQuestions: [Int] = []
+    private var isManuallyHidden = false
 
     let panel: ActivatingFloatingPanel
     private let questionLabel = NSTextField(labelWithString: "第 1 题")
@@ -48,7 +49,7 @@ final class FloatingTimerController: NSObject, NSComboBoxDelegate {
     override init() {
         panel = ActivatingFloatingPanel(
             contentRect: NSRect(x: 0, y: 0, width: 402, height: 142),
-            styleMask: [.borderless],
+            styleMask: [.borderless, .nonactivatingPanel],
             backing: .buffered,
             defer: false
         )
@@ -65,10 +66,11 @@ final class FloatingTimerController: NSObject, NSComboBoxDelegate {
         panel.level = .statusBar
         panel.hidesOnDeactivate = false
         panel.isMovableByWindowBackground = true
-        panel.becomesKeyOnlyIfNeeded = false
+        panel.becomesKeyOnlyIfNeeded = true
         panel.collectionBehavior = [
             .canJoinAllSpaces,
             .fullScreenAuxiliary,
+            .transient,
             .stationary,
             .ignoresCycle
         ]
@@ -120,7 +122,7 @@ final class FloatingTimerController: NSObject, NSComboBoxDelegate {
         durationSelector.translatesAutoresizingMaskIntoConstraints = false
 
         customDurationButton.target = self
-        customDurationButton.action = #selector(promptCustomDuration)
+        customDurationButton.action = #selector(beginCustomDurationEdit)
         customDurationButton.bezelStyle = .rounded
         customDurationButton.controlSize = .mini
         customDurationButton.font = .systemFont(ofSize: 12, weight: .semibold)
@@ -207,11 +209,17 @@ final class FloatingTimerController: NSObject, NSComboBoxDelegate {
     }
 
     func show() {
-        panel.orderFrontRegardless()
+        isManuallyHidden = false
+        panel.orderFront(nil)
     }
 
     func toggleVisibility() {
-        panel.isVisible ? panel.orderOut(nil) : show()
+        if panel.isVisible {
+            isManuallyHidden = true
+            panel.orderOut(nil)
+        } else {
+            show()
+        }
     }
 
     @objc func toggleTimer() {
@@ -302,7 +310,7 @@ final class FloatingTimerController: NSObject, NSComboBoxDelegate {
         alert.addButton(withTitle: "知道了")
         NSApp.activate(ignoringOtherApps: true)
         alert.runModal()
-        panel.orderFrontRegardless()
+        panel.orderFront(nil)
     }
 
     private func formatQuestions(_ questions: [Int]) -> String {
@@ -325,6 +333,24 @@ final class FloatingTimerController: NSObject, NSComboBoxDelegate {
 
     @objc private func changeDuration() {
         applyDurationInput(resetIfChanged: true)
+        durationSelector.isEditable = false
+        customDurationButton.title = "✎"
+        customDurationButton.toolTip = "输入自定义秒数"
+    }
+
+    @objc private func beginCustomDurationEdit() {
+        if durationSelector.isEditable {
+            changeDuration()
+            return
+        }
+        durationSelector.isEditable = true
+        durationSelector.stringValue = "\(Int(duration))"
+        customDurationButton.title = "✓"
+        customDurationButton.toolTip = "确认自定义秒数"
+        panel.makeFirstResponder(durationSelector)
+        DispatchQueue.main.async { [weak self] in
+            self?.durationSelector.currentEditor()?.selectAll(nil)
+        }
     }
 
     @discardableResult
@@ -350,44 +376,12 @@ final class FloatingTimerController: NSObject, NSComboBoxDelegate {
         changeDuration()
     }
 
-    @objc private func promptCustomDuration() {
-        let alert = NSAlert()
-        alert.messageText = "自定义每题时长"
-        alert.informativeText = "请输入5-600之间的秒数"
-        alert.alertStyle = .informational
-        alert.addButton(withTitle: "确定")
-        alert.addButton(withTitle: "取消")
-
-        let input = NSTextField(string: "\(Int(duration))")
-        input.frame = NSRect(x: 0, y: 0, width: 210, height: 26)
-        input.placeholderString = "例如：83"
-        alert.accessoryView = input
-        alert.window.initialFirstResponder = input
-
-        NSApp.activate(ignoringOtherApps: true)
-        input.selectText(nil)
-        let response = alert.runModal()
-
-        if response == .alertFirstButtonReturn,
-           let entered = Int(input.stringValue),
-           entered >= 5,
-           entered <= 600 {
-            duration = TimeInterval(entered)
-            durationSelector.stringValue = "\(entered)秒"
-            resetState()
-            updateView()
-        } else if response == .alertFirstButtonReturn {
-            NSSound.beep()
-        }
-
-        panel.orderFrontRegardless()
-    }
-
     @objc private func quitApp() {
         NSApp.terminate(nil)
     }
 
     @objc private func minimizeApp() {
+        isManuallyHidden = true
         panel.orderOut(nil)
     }
 
