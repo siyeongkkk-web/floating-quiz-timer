@@ -30,6 +30,8 @@ final class FloatingTimerController: NSObject, NSComboBoxDelegate {
     private var wrongQuestions: [Int] = []
     private var skippedQuestions: [Int] = []
     private var isManuallyHidden = false
+    private var historyOverlay: NSVisualEffectView?
+    private var historyFrame: NSRect?
 
     let panel: ActivatingFloatingPanel
     private let questionLabel = NSTextField(labelWithString: "第 1 题")
@@ -303,14 +305,90 @@ final class FloatingTimerController: NSObject, NSComboBoxDelegate {
     }
 
     @objc private func showQuestionHistory() {
-        let alert = NSAlert()
-        alert.messageText = "本轮答题记录"
-        alert.informativeText = "✓ 正确：\(formatQuestions(correctQuestions))\n\n✗ 错误：\(formatQuestions(wrongQuestions))\n\n— 跳过：\(formatQuestions(skippedQuestions))"
-        alert.alertStyle = .informational
-        alert.addButton(withTitle: "知道了")
-        NSApp.activate(ignoringOtherApps: true)
-        alert.runModal()
-        panel.orderFront(nil)
+        if historyOverlay != nil {
+            hideQuestionHistory()
+            return
+        }
+
+        historyFrame = panel.frame
+        let expandedHeight: CGFloat = 258
+        var expandedFrame = panel.frame
+        expandedFrame.origin.y -= expandedHeight - expandedFrame.height
+        expandedFrame.size.height = expandedHeight
+        panel.setFrame(expandedFrame, display: true, animate: true)
+
+        let overlay = NSVisualEffectView()
+        overlay.material = .popover
+        overlay.blendingMode = .withinWindow
+        overlay.state = .active
+        overlay.wantsLayer = true
+        overlay.layer?.cornerRadius = 16
+        overlay.layer?.masksToBounds = true
+        overlay.translatesAutoresizingMaskIntoConstraints = false
+
+        let title = NSTextField(labelWithString: "本轮答题记录")
+        title.font = .systemFont(ofSize: 14, weight: .bold)
+
+        let close = NSButton(title: "收起", target: self, action: #selector(hideQuestionHistory))
+        close.bezelStyle = .inline
+        close.font = .systemFont(ofSize: 12, weight: .semibold)
+
+        let textView = NSTextView()
+        textView.string = "✓ 正确：\(formatQuestions(correctQuestions))\n\n✗ 错误：\(formatQuestions(wrongQuestions))\n\n— 跳过：\(formatQuestions(skippedQuestions))"
+        textView.font = .monospacedDigitSystemFont(ofSize: 12, weight: .medium)
+        textView.textColor = .labelColor
+        textView.drawsBackground = false
+        textView.isEditable = false
+        textView.isSelectable = true
+        textView.isRichText = false
+        textView.textContainerInset = NSSize(width: 4, height: 6)
+        textView.isHorizontallyResizable = false
+        textView.isVerticallyResizable = true
+        textView.frame = NSRect(x: 0, y: 0, width: panel.frame.width - 48, height: 1_000)
+        textView.minSize = NSSize(width: panel.frame.width - 48, height: 0)
+        textView.maxSize = NSSize(width: panel.frame.width - 48, height: .greatestFiniteMagnitude)
+        textView.autoresizingMask = [.width]
+        textView.textContainer?.widthTracksTextView = true
+
+        let scrollView = NSScrollView()
+        scrollView.drawsBackground = false
+        scrollView.hasVerticalScroller = true
+        scrollView.autohidesScrollers = true
+        scrollView.documentView = textView
+        scrollView.translatesAutoresizingMaskIntoConstraints = false
+
+        guard let contentView = panel.contentView else { return }
+        contentView.addSubview(overlay)
+        overlay.addSubview(title)
+        overlay.addSubview(close)
+        overlay.addSubview(scrollView)
+        title.translatesAutoresizingMaskIntoConstraints = false
+        close.translatesAutoresizingMaskIntoConstraints = false
+
+        NSLayoutConstraint.activate([
+            overlay.leadingAnchor.constraint(equalTo: contentView.leadingAnchor, constant: 6),
+            overlay.trailingAnchor.constraint(equalTo: contentView.trailingAnchor, constant: -6),
+            overlay.topAnchor.constraint(equalTo: contentView.topAnchor, constant: 6),
+            overlay.bottomAnchor.constraint(equalTo: contentView.bottomAnchor, constant: -6),
+            title.leadingAnchor.constraint(equalTo: overlay.leadingAnchor, constant: 16),
+            title.topAnchor.constraint(equalTo: overlay.topAnchor, constant: 14),
+            close.trailingAnchor.constraint(equalTo: overlay.trailingAnchor, constant: -12),
+            close.centerYAnchor.constraint(equalTo: title.centerYAnchor),
+            scrollView.leadingAnchor.constraint(equalTo: overlay.leadingAnchor, constant: 12),
+            scrollView.trailingAnchor.constraint(equalTo: overlay.trailingAnchor, constant: -12),
+            scrollView.topAnchor.constraint(equalTo: title.bottomAnchor, constant: 10),
+            scrollView.bottomAnchor.constraint(equalTo: overlay.bottomAnchor, constant: -12)
+        ])
+        historyOverlay = overlay
+    }
+
+    @objc private func hideQuestionHistory() {
+        historyOverlay?.removeFromSuperview()
+        historyOverlay = nil
+        if let historyFrame {
+            panel.setFrame(historyFrame, display: true, animate: true)
+        }
+        historyFrame = nil
     }
 
     private func formatQuestions(_ questions: [Int]) -> String {
