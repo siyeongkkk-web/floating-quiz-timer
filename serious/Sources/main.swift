@@ -75,14 +75,17 @@ private final class CharacterPackEditorController: NSObject, NSWindowDelegate {
     private var captionFields: [CharacterStage: NSTextField] = [:]
     private let saveButton = NSButton(title: "保存并使用", target: nil, action: nil)
     private let onSave: ([CharacterStage: NSImage], [CharacterStage: String]) -> Bool
+    private let onClose: () -> Void
 
     init(
         images: [CharacterStage: NSImage],
         captions: [CharacterStage: String],
-        onSave: @escaping ([CharacterStage: NSImage], [CharacterStage: String]) -> Bool
+        onSave: @escaping ([CharacterStage: NSImage], [CharacterStage: String]) -> Bool,
+        onClose: @escaping () -> Void
     ) {
         self.images = images
         self.onSave = onSave
+        self.onClose = onClose
         window = NSPanel(
             contentRect: NSRect(x: 0, y: 0, width: 650, height: 430),
             styleMask: [.titled, .closable],
@@ -249,26 +252,21 @@ private final class CharacterPackEditorController: NSObject, NSWindowDelegate {
             captions[stage] = value.isEmpty ? stage.defaultCaption : value
         }
         guard onSave(images, captions) else { return }
-        NSApp.stopModal()
         window.close()
     }
 
     @objc private func cancel() {
-        NSApp.stopModal()
         window.close()
     }
 
-    func runModal() {
+    func show() {
         window.center()
         window.makeKeyAndOrderFront(nil)
         NSApp.activate(ignoringOtherApps: true)
-        NSApp.runModal(for: window)
     }
 
     func windowWillClose(_ notification: Notification) {
-        if NSApp.modalWindow == window {
-            NSApp.stopModal()
-        }
+        onClose()
     }
 }
 
@@ -312,6 +310,7 @@ final class FloatingTimerController: NSObject, NSComboBoxDelegate {
     private let removeCharacterButton = NSButton(title: "×", target: nil, action: nil)
     private var characterImages: [CharacterStage: NSImage] = [:]
     private var characterCaptions: [CharacterStage: String] = [:]
+    private var characterEditor: CharacterPackEditorController?
 
     private let compactPanelWidth: CGFloat = 402
     private let customizedPanelWidth: CGFloat = 522
@@ -761,13 +760,21 @@ final class FloatingTimerController: NSObject, NSComboBoxDelegate {
     }
 
     @objc func showCharacterEditor() {
+        if let characterEditor {
+            characterEditor.show()
+            return
+        }
+
         let editor = CharacterPackEditorController(
             images: characterImages,
             captions: characterCaptions
         ) { [weak self] images, captions in
             self?.saveCharacterPack(images: images, captions: captions) ?? false
+        } onClose: { [weak self] in
+            self?.characterEditor = nil
         }
-        editor.runModal()
+        characterEditor = editor
+        editor.show()
     }
 
     @objc func removeCharacterPack() {
