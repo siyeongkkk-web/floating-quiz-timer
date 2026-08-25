@@ -15,6 +15,263 @@ final class SelectAllComboBox: NSComboBox {
     }
 }
 
+private enum CharacterStage: Int, CaseIterable {
+    case calm
+    case halfway
+    case urgent
+
+    var key: String {
+        switch self {
+        case .calm: return "calm"
+        case .halfway: return "halfway"
+        case .urgent: return "urgent"
+        }
+    }
+
+    var title: String {
+        switch self {
+        case .calm: return "从容阶段"
+        case .halfway: return "过半阶段"
+        case .urgent: return "冲刺阶段"
+        }
+    }
+
+    var timing: String {
+        switch self {
+        case .calm: return "剩余时间 > 50%"
+        case .halfway: return "剩余时间 ≤ 50%"
+        case .urgent: return "最后 10 秒"
+        }
+    }
+
+    var defaultCaption: String {
+        switch self {
+        case .calm: return "从容一点，先看清题"
+        case .halfway: return "已经过半，注意节奏"
+        case .urgent: return "快到时间，先做选择"
+        }
+    }
+
+    var color: NSColor {
+        switch self {
+        case .calm: return .systemGreen
+        case .halfway: return .systemOrange
+        case .urgent: return .systemRed
+        }
+    }
+
+    var imageFileName: String { "\(key).png" }
+}
+
+private struct CharacterPackConfig: Codable {
+    var captions: [String: String]
+}
+
+private final class CharacterPackEditorController: NSObject, NSWindowDelegate {
+    private let window: NSPanel
+    private var images: [CharacterStage: NSImage]
+    private var imageViews: [CharacterStage: NSImageView] = [:]
+    private var chooseButtons: [CharacterStage: NSButton] = [:]
+    private var captionFields: [CharacterStage: NSTextField] = [:]
+    private let saveButton = NSButton(title: "保存并使用", target: nil, action: nil)
+    private let onSave: ([CharacterStage: NSImage], [CharacterStage: String]) -> Bool
+
+    init(
+        images: [CharacterStage: NSImage],
+        captions: [CharacterStage: String],
+        onSave: @escaping ([CharacterStage: NSImage], [CharacterStage: String]) -> Bool
+    ) {
+        self.images = images
+        self.onSave = onSave
+        window = NSPanel(
+            contentRect: NSRect(x: 0, y: 0, width: 650, height: 430),
+            styleMask: [.titled, .closable],
+            backing: .buffered,
+            defer: false
+        )
+        super.init()
+        window.delegate = self
+        configureWindow(captions: captions)
+    }
+
+    private func configureWindow(captions: [CharacterStage: String]) {
+        window.title = "定制三阶段形象"
+        window.isReleasedWhenClosed = false
+        window.level = .floating
+        window.collectionBehavior = [.canJoinAllSpaces, .fullScreenAuxiliary]
+
+        let background = NSVisualEffectView()
+        background.material = .popover
+        background.blendingMode = .behindWindow
+        background.state = .active
+        window.contentView = background
+
+        let title = NSTextField(labelWithString: "让形象和文案随答题时间一起变化")
+        title.font = .systemFont(ofSize: 18, weight: .bold)
+
+        let explanation = NSTextField(labelWithString: "分别选择三张图片并填写提示语。图片只保存在这台 Mac 上。")
+        explanation.font = .systemFont(ofSize: 12)
+        explanation.textColor = .secondaryLabelColor
+
+        let stageList = NSStackView()
+        stageList.orientation = .vertical
+        stageList.spacing = 8
+        for stage in CharacterStage.allCases {
+            stageList.addArrangedSubview(makeStageRow(stage, caption: captions[stage] ?? stage.defaultCaption))
+        }
+
+        let cancelButton = NSButton(title: "取消", target: self, action: #selector(cancel))
+        cancelButton.bezelStyle = .rounded
+
+        saveButton.target = self
+        saveButton.action = #selector(save)
+        saveButton.bezelStyle = .rounded
+        saveButton.keyEquivalent = "\r"
+
+        let footer = NSStackView(views: [NSView(), cancelButton, saveButton])
+        footer.orientation = .horizontal
+        footer.spacing = 8
+
+        let root = NSStackView(views: [title, explanation, stageList, footer])
+        root.orientation = .vertical
+        root.spacing = 10
+        root.edgeInsets = NSEdgeInsets(top: 20, left: 22, bottom: 18, right: 22)
+        root.translatesAutoresizingMaskIntoConstraints = false
+        background.addSubview(root)
+
+        NSLayoutConstraint.activate([
+            root.leadingAnchor.constraint(equalTo: background.leadingAnchor),
+            root.trailingAnchor.constraint(equalTo: background.trailingAnchor),
+            root.topAnchor.constraint(equalTo: background.topAnchor),
+            root.bottomAnchor.constraint(equalTo: background.bottomAnchor),
+            footer.heightAnchor.constraint(equalToConstant: 32)
+        ])
+        updateSaveButton()
+    }
+
+    private func makeStageRow(_ stage: CharacterStage, caption: String) -> NSView {
+        let stageTitle = NSTextField(labelWithString: stage.title)
+        stageTitle.font = .systemFont(ofSize: 13, weight: .semibold)
+
+        let timing = NSTextField(labelWithString: stage.timing)
+        timing.font = .systemFont(ofSize: 10)
+        timing.textColor = .secondaryLabelColor
+
+        let stageText = NSStackView(views: [stageTitle, timing])
+        stageText.orientation = .vertical
+        stageText.spacing = 3
+        stageText.translatesAutoresizingMaskIntoConstraints = false
+
+        let imageView = NSImageView()
+        imageView.image = images[stage]
+        imageView.imageScaling = .scaleProportionallyUpOrDown
+        imageView.wantsLayer = true
+        imageView.layer?.cornerRadius = 9
+        imageView.layer?.cornerCurve = .continuous
+        imageView.layer?.masksToBounds = true
+        imageView.layer?.borderWidth = 2
+        imageView.layer?.borderColor = stage.color.cgColor
+        imageView.setAccessibilityLabel("\(stage.title)图片预览")
+        imageView.translatesAutoresizingMaskIntoConstraints = false
+        imageViews[stage] = imageView
+
+        let chooseButton = NSButton(title: images[stage] == nil ? "选择图片" : "更换图片", target: self, action: #selector(chooseImage(_:)))
+        chooseButton.tag = stage.rawValue
+        chooseButton.bezelStyle = .rounded
+        chooseButton.controlSize = .small
+        chooseButton.translatesAutoresizingMaskIntoConstraints = false
+        chooseButtons[stage] = chooseButton
+
+        let captionLabel = NSTextField(labelWithString: "阶段文案")
+        captionLabel.font = .systemFont(ofSize: 10, weight: .medium)
+        captionLabel.textColor = .secondaryLabelColor
+
+        let captionField = NSTextField(string: caption)
+        captionField.placeholderString = stage.defaultCaption
+        captionField.font = .systemFont(ofSize: 12)
+        captionField.translatesAutoresizingMaskIntoConstraints = false
+        captionFields[stage] = captionField
+
+        let captionColumn = NSStackView(views: [captionLabel, captionField])
+        captionColumn.orientation = .vertical
+        captionColumn.spacing = 4
+
+        let row = NSStackView(views: [stageText, imageView, chooseButton, captionColumn])
+        row.orientation = .horizontal
+        row.alignment = .centerY
+        row.spacing = 12
+        row.edgeInsets = NSEdgeInsets(top: 8, left: 10, bottom: 8, right: 10)
+        row.wantsLayer = true
+        row.layer?.cornerRadius = 10
+        row.layer?.cornerCurve = .continuous
+        row.layer?.backgroundColor = NSColor.controlBackgroundColor.withAlphaComponent(0.55).cgColor
+
+        NSLayoutConstraint.activate([
+            row.heightAnchor.constraint(equalToConstant: 88),
+            stageText.widthAnchor.constraint(equalToConstant: 100),
+            imageView.widthAnchor.constraint(equalToConstant: 66),
+            imageView.heightAnchor.constraint(equalToConstant: 66),
+            chooseButton.widthAnchor.constraint(equalToConstant: 82),
+            captionField.widthAnchor.constraint(greaterThanOrEqualToConstant: 260)
+        ])
+        return row
+    }
+
+    @objc private func chooseImage(_ sender: NSButton) {
+        guard let stage = CharacterStage(rawValue: sender.tag) else { return }
+        let picker = NSOpenPanel()
+        picker.title = "选择\(stage.title)图片"
+        picker.prompt = "使用这张图片"
+        picker.message = "支持常见图片格式；原图不会上传网络。"
+        picker.canChooseDirectories = false
+        picker.canChooseFiles = true
+        picker.allowsMultipleSelection = false
+        picker.allowedContentTypes = [.image]
+
+        guard picker.runModal() == .OK,
+              let sourceURL = picker.url,
+              let image = NSImage(contentsOf: sourceURL) else { return }
+        images[stage] = image
+        imageViews[stage]?.image = image
+        chooseButtons[stage]?.title = "更换图片"
+        updateSaveButton()
+    }
+
+    private func updateSaveButton() {
+        saveButton.isEnabled = CharacterStage.allCases.allSatisfy { images[$0] != nil }
+        saveButton.toolTip = saveButton.isEnabled ? "保存三阶段形象与文案" : "请先为三个阶段分别选择图片"
+    }
+
+    @objc private func save() {
+        var captions: [CharacterStage: String] = [:]
+        for stage in CharacterStage.allCases {
+            let value = captionFields[stage]?.stringValue.trimmingCharacters(in: .whitespacesAndNewlines) ?? ""
+            captions[stage] = value.isEmpty ? stage.defaultCaption : value
+        }
+        guard onSave(images, captions) else { return }
+        NSApp.stopModal()
+        window.close()
+    }
+
+    @objc private func cancel() {
+        NSApp.stopModal()
+        window.close()
+    }
+
+    func runModal() {
+        window.center()
+        window.makeKeyAndOrderFront(nil)
+        NSApp.activate(ignoringOtherApps: true)
+        NSApp.runModal(for: window)
+    }
+
+    func windowWillClose(_ notification: Notification) {
+        if NSApp.modalWindow == window {
+            NSApp.stopModal()
+        }
+    }
+}
+
 final class FloatingTimerController: NSObject, NSComboBoxDelegate {
     private var duration: TimeInterval = 60
     private var remaining: TimeInterval = 60
@@ -53,6 +310,8 @@ final class FloatingTimerController: NSObject, NSComboBoxDelegate {
     private let characterImageView = NSImageView()
     private let characterCaption = NSTextField(labelWithString: "从容一点，先看清题")
     private let removeCharacterButton = NSButton(title: "×", target: nil, action: nil)
+    private var characterImages: [CharacterStage: NSImage] = [:]
+    private var characterCaptions: [CharacterStage: String] = [:]
 
     private let compactPanelWidth: CGFloat = 402
     private let customizedPanelWidth: CGFloat = 522
@@ -67,7 +326,7 @@ final class FloatingTimerController: NSObject, NSComboBoxDelegate {
         super.init()
         configurePanel()
         buildInterface()
-        loadSavedCharacterImage()
+        loadSavedCharacterPack()
         updateView()
     }
 
@@ -142,13 +401,13 @@ final class FloatingTimerController: NSObject, NSComboBoxDelegate {
         customDurationButton.translatesAutoresizingMaskIntoConstraints = false
 
         customizeImageButton.target = self
-        customizeImageButton.action = #selector(chooseCharacterImage)
+        customizeImageButton.action = #selector(showCharacterEditor)
         customizeImageButton.bezelStyle = .inline
         customizeImageButton.controlSize = .mini
         customizeImageButton.image = NSImage(systemSymbolName: "photo.badge.plus", accessibilityDescription: "选择自定义形象")
         customizeImageButton.imagePosition = .imageOnly
         customizeImageButton.contentTintColor = .secondaryLabelColor
-        customizeImageButton.toolTip = "选择或更换自定义形象"
+        customizeImageButton.toolTip = "定制三阶段形象与文案"
         customizeImageButton.translatesAutoresizingMaskIntoConstraints = false
 
         minimizeButton.target = self
@@ -216,7 +475,7 @@ final class FloatingTimerController: NSObject, NSComboBoxDelegate {
         characterCaption.maximumNumberOfLines = 2
 
         removeCharacterButton.target = self
-        removeCharacterButton.action = #selector(removeCharacterImage)
+        removeCharacterButton.action = #selector(removeCharacterPack)
         removeCharacterButton.bezelStyle = .inline
         removeCharacterButton.controlSize = .mini
         removeCharacterButton.font = .systemFont(ofSize: 12, weight: .semibold)
@@ -501,65 +760,122 @@ final class FloatingTimerController: NSObject, NSComboBoxDelegate {
         }
     }
 
-    @objc func chooseCharacterImage() {
-        let picker = NSOpenPanel()
-        picker.title = "选择计时器形象"
-        picker.prompt = "使用这张图片"
-        picker.message = "支持常见图片格式；图片只保存在这台 Mac 上。"
-        picker.canChooseDirectories = false
-        picker.canChooseFiles = true
-        picker.allowsMultipleSelection = false
-        picker.allowedContentTypes = [.image]
-
-        guard picker.runModal() == .OK,
-              let sourceURL = picker.url,
-              let image = NSImage(contentsOf: sourceURL),
-              saveCharacterImage(image) else { return }
-
-        showCharacterImage(image)
+    @objc func showCharacterEditor() {
+        let editor = CharacterPackEditorController(
+            images: characterImages,
+            captions: characterCaptions
+        ) { [weak self] images, captions in
+            self?.saveCharacterPack(images: images, captions: captions) ?? false
+        }
+        editor.runModal()
     }
 
-    @objc func removeCharacterImage() {
-        try? FileManager.default.removeItem(at: characterImageURL)
+    @objc func removeCharacterPack() {
+        for url in characterPackFileURLs.values {
+            try? FileManager.default.removeItem(at: url)
+        }
+        try? FileManager.default.removeItem(at: characterConfigURL)
+        try? FileManager.default.removeItem(at: legacyCharacterImageURL)
+        characterImages.removeAll()
+        characterCaptions.removeAll()
         characterImageView.image = nil
         setCharacterVisible(false)
     }
 
-    private var characterImageURL: URL {
+    private var characterDirectory: URL {
         let supportDirectory = FileManager.default.urls(for: .applicationSupportDirectory, in: .userDomainMask)[0]
-        return supportDirectory
-            .appendingPathComponent("FloatingQuizTimer", isDirectory: true)
-            .appendingPathComponent("custom-character.png")
+        return supportDirectory.appendingPathComponent("FloatingQuizTimer", isDirectory: true)
     }
 
-    private func saveCharacterImage(_ image: NSImage) -> Bool {
+    private var characterConfigURL: URL {
+        characterDirectory.appendingPathComponent("character-pack.json")
+    }
+
+    private var legacyCharacterImageURL: URL {
+        characterDirectory.appendingPathComponent("custom-character.png")
+    }
+
+    private var characterPackFileURLs: [CharacterStage: URL] {
+        Dictionary(uniqueKeysWithValues: CharacterStage.allCases.map {
+            ($0, characterDirectory.appendingPathComponent($0.imageFileName))
+        })
+    }
+
+    private func pngData(for image: NSImage) -> Data? {
         guard let tiff = image.tiffRepresentation,
               let bitmap = NSBitmapImageRep(data: tiff),
               let png = bitmap.representation(using: .png, properties: [:]) else {
+            return nil
+        }
+        return png
+    }
+
+    private func saveCharacterPack(
+        images: [CharacterStage: NSImage],
+        captions: [CharacterStage: String]
+    ) -> Bool {
+        guard CharacterStage.allCases.allSatisfy({ images[$0] != nil }) else {
             NSSound.beep()
             return false
         }
-
         do {
             try FileManager.default.createDirectory(
-                at: characterImageURL.deletingLastPathComponent(),
+                at: characterDirectory,
                 withIntermediateDirectories: true
             )
-            try png.write(to: characterImageURL, options: .atomic)
-            return true
+            for stage in CharacterStage.allCases {
+                guard let image = images[stage], let data = pngData(for: image), let url = characterPackFileURLs[stage] else {
+                    NSSound.beep()
+                    return false
+                }
+                try data.write(to: url, options: .atomic)
+            }
+            let config = CharacterPackConfig(captions: Dictionary(uniqueKeysWithValues: captions.map { ($0.key.key, $0.value) }))
+            let configData = try JSONEncoder().encode(config)
+            try configData.write(to: characterConfigURL, options: .atomic)
+            try? FileManager.default.removeItem(at: legacyCharacterImageURL)
         } catch {
             NSSound.beep()
             return false
         }
+
+        characterImages = images
+        characterCaptions = captions
+        setCharacterVisible(true)
+        updateCharacterStage()
+        return true
     }
 
-    private func loadSavedCharacterImage() {
-        guard let image = NSImage(contentsOf: characterImageURL) else { return }
-        showCharacterImage(image)
+    private func loadSavedCharacterPack() {
+        var loadedImages: [CharacterStage: NSImage] = [:]
+        for stage in CharacterStage.allCases {
+            guard let url = characterPackFileURLs[stage], let image = NSImage(contentsOf: url) else {
+                loadLegacyCharacterImage()
+                return
+            }
+            loadedImages[stage] = image
+        }
+
+        var loadedCaptions = Dictionary(uniqueKeysWithValues: CharacterStage.allCases.map { ($0, $0.defaultCaption) })
+        if let data = try? Data(contentsOf: characterConfigURL),
+           let config = try? JSONDecoder().decode(CharacterPackConfig.self, from: data) {
+            for stage in CharacterStage.allCases {
+                if let value = config.captions[stage.key], !value.isEmpty {
+                    loadedCaptions[stage] = value
+                }
+            }
+        }
+
+        characterImages = loadedImages
+        characterCaptions = loadedCaptions
+        setCharacterVisible(true)
+        updateCharacterStage()
     }
 
-    private func showCharacterImage(_ image: NSImage) {
-        characterImageView.image = image
+    private func loadLegacyCharacterImage() {
+        guard let image = NSImage(contentsOf: legacyCharacterImageURL) else { return }
+        characterImages = Dictionary(uniqueKeysWithValues: CharacterStage.allCases.map { ($0, image) })
+        characterCaptions = Dictionary(uniqueKeysWithValues: CharacterStage.allCases.map { ($0, $0.defaultCaption) })
         setCharacterVisible(true)
         updateCharacterStage()
     }
@@ -578,20 +894,19 @@ final class FloatingTimerController: NSObject, NSComboBoxDelegate {
     private func updateCharacterStage() {
         guard !characterColumn.isHidden else { return }
         let ratio = duration > 0 ? remaining / duration : 0
-
+        let stage: CharacterStage
         if remaining <= 10 {
-            characterCaption.stringValue = "快到时间，先做选择"
-            characterCaption.textColor = .systemRed
-            characterImageView.layer?.borderColor = NSColor.systemRed.cgColor
+            stage = .urgent
         } else if ratio <= 0.5 {
-            characterCaption.stringValue = "已经过半，注意节奏"
-            characterCaption.textColor = .systemOrange
-            characterImageView.layer?.borderColor = NSColor.systemOrange.cgColor
+            stage = .halfway
         } else {
-            characterCaption.stringValue = "从容一点，先看清题"
-            characterCaption.textColor = .secondaryLabelColor
-            characterImageView.layer?.borderColor = NSColor.systemGreen.cgColor
+            stage = .calm
         }
+
+        characterImageView.image = characterImages[stage]
+        characterCaption.stringValue = characterCaptions[stage] ?? stage.defaultCaption
+        characterCaption.textColor = stage == .calm ? .secondaryLabelColor : stage.color
+        characterImageView.layer?.borderColor = stage.color.cgColor
     }
 
     @discardableResult
@@ -706,11 +1021,11 @@ final class AppDelegate: NSObject, NSApplicationDelegate {
         resetItem.target = self
         menu.addItem(resetItem)
 
-        let chooseImageItem = NSMenuItem(title: "选择自定义形象…", action: #selector(chooseCharacterImage), keyEquivalent: "")
+        let chooseImageItem = NSMenuItem(title: "定制三阶段形象…", action: #selector(showCharacterEditor), keyEquivalent: "")
         chooseImageItem.target = self
         menu.addItem(chooseImageItem)
 
-        let removeImageItem = NSMenuItem(title: "恢复简洁模式", action: #selector(removeCharacterImage), keyEquivalent: "")
+        let removeImageItem = NSMenuItem(title: "恢复简洁模式", action: #selector(removeCharacterPack), keyEquivalent: "")
         removeImageItem.target = self
         menu.addItem(removeImageItem)
 
@@ -730,13 +1045,13 @@ final class AppDelegate: NSObject, NSApplicationDelegate {
         timerController.show()
     }
 
-    @objc private func chooseCharacterImage() {
-        timerController.chooseCharacterImage()
+    @objc private func showCharacterEditor() {
+        timerController.showCharacterEditor()
         timerController.show()
     }
 
-    @objc private func removeCharacterImage() {
-        timerController.removeCharacterImage()
+    @objc private func removeCharacterPack() {
+        timerController.removeCharacterPack()
         timerController.show()
     }
 
