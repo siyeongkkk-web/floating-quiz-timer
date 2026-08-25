@@ -71,13 +71,15 @@ private struct CharacterPackConfig: Codable {
     var captions: [String: String]
 }
 
-private final class CharacterPackEditorController: NSObject {
+private final class CharacterPackEditorController: NSObject, NSTextFieldDelegate {
     private weak var hostPanel: ActivatingFloatingPanel?
     private let overlay = NSVisualEffectView()
     private var originalFrame: NSRect?
     private var originalPanelLevel: NSWindow.Level?
     private var isVisible = false
     private var previousApplication: NSRunningApplication?
+    private var spaceChangeObserver: NSObjectProtocol?
+    private weak var activeCaptionField: NSTextField?
     private var images: [CharacterStage: NSImage]
     private var imageViews: [CharacterStage: NSImageView] = [:]
     private var chooseButtons: [CharacterStage: NSButton] = [:]
@@ -193,6 +195,7 @@ private final class CharacterPackEditorController: NSObject {
         let captionField = PanelTextField(string: caption)
         captionField.placeholderString = stage.defaultCaption
         captionField.font = .systemFont(ofSize: 12)
+        captionField.delegate = self
         captionField.translatesAutoresizingMaskIntoConstraints = false
         captionFields[stage] = captionField
 
@@ -293,6 +296,7 @@ private final class CharacterPackEditorController: NSObject {
             overlay.bottomAnchor.constraint(equalTo: contentView.bottomAnchor, constant: -6)
         ])
         isVisible = true
+        startObservingSpaceChanges()
         hostPanel.level = .normal
         hostPanel.becomesKeyOnlyIfNeeded = false
         NSApp.activate(ignoringOtherApps: true)
@@ -300,6 +304,7 @@ private final class CharacterPackEditorController: NSObject {
     }
 
     private func close() {
+        stopObservingSpaceChanges()
         hostPanel?.endEditing(for: nil)
         overlay.removeFromSuperview()
         if let hostPanel, let originalFrame {
@@ -311,11 +316,48 @@ private final class CharacterPackEditorController: NSObject {
         originalFrame = nil
         originalPanelLevel = nil
         previousApplication = nil
+        activeCaptionField = nil
         isVisible = false
         onClose()
         DispatchQueue.main.async {
             applicationToRestore?.activate(options: [.activateIgnoringOtherApps])
         }
+    }
+
+    func controlTextDidBeginEditing(_ notification: Notification) {
+        activeCaptionField = notification.object as? NSTextField
+    }
+
+    private func startObservingSpaceChanges() {
+        guard spaceChangeObserver == nil else { return }
+        spaceChangeObserver = NSWorkspace.shared.notificationCenter.addObserver(
+            forName: NSWorkspace.activeSpaceDidChangeNotification,
+            object: nil,
+            queue: .main
+        ) { [weak self] _ in
+            DispatchQueue.main.async {
+                self?.restoreEditingFocusAfterSpaceChange()
+            }
+        }
+    }
+
+    private func stopObservingSpaceChanges() {
+        guard let spaceChangeObserver else { return }
+        NSWorkspace.shared.notificationCenter.removeObserver(spaceChangeObserver)
+        self.spaceChangeObserver = nil
+    }
+
+    private func restoreEditingFocusAfterSpaceChange() {
+        guard isVisible, let hostPanel, hostPanel.attachedSheet == nil else { return }
+        NSApp.activate(ignoringOtherApps: true)
+        hostPanel.makeKeyAndOrderFront(nil)
+        if let activeCaptionField {
+            hostPanel.makeFirstResponder(activeCaptionField)
+        }
+    }
+
+    deinit {
+        stopObservingSpaceChanges()
     }
 }
 
