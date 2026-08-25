@@ -231,13 +231,16 @@ private final class CharacterPackEditorController: NSObject, NSWindowDelegate {
         picker.allowsMultipleSelection = false
         picker.allowedContentTypes = [.image]
 
-        guard picker.runModal() == .OK,
-              let sourceURL = picker.url,
-              let image = NSImage(contentsOf: sourceURL) else { return }
-        images[stage] = image
-        imageViews[stage]?.image = image
-        chooseButtons[stage]?.title = "更换图片"
-        updateSaveButton()
+        picker.beginSheetModal(for: window) { [weak self] response in
+            guard response == .OK,
+                  let self,
+                  let sourceURL = picker.url,
+                  let image = NSImage(contentsOf: sourceURL) else { return }
+            self.images[stage] = image
+            self.imageViews[stage]?.image = image
+            self.chooseButtons[stage]?.title = "更换图片"
+            self.updateSaveButton()
+        }
     }
 
     private func updateSaveButton() {
