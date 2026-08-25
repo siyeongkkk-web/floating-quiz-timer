@@ -71,11 +71,9 @@ private struct CharacterPackConfig: Codable {
     var captions: [String: String]
 }
 
-private final class CharacterPackEditorController: NSObject, NSTextFieldDelegate {
+private final class CharacterPackEditorController: NSObject, NSTextFieldDelegate, NSWindowDelegate {
     private weak var hostPanel: ActivatingFloatingPanel?
-    private let overlay = NSVisualEffectView()
-    private var originalFrame: NSRect?
-    private var originalPanelLevel: NSWindow.Level?
+    private let editorWindow: NSWindow
     private var isVisible = false
     private var previousApplication: NSRunningApplication?
     private var spaceChangeObserver: NSObjectProtocol?
@@ -96,14 +94,28 @@ private final class CharacterPackEditorController: NSObject, NSTextFieldDelegate
         onClose: @escaping () -> Void
     ) {
         self.hostPanel = hostPanel
+        self.editorWindow = NSWindow(
+            contentRect: NSRect(x: 0, y: 0, width: 650, height: 430),
+            styleMask: [.titled, .closable],
+            backing: .buffered,
+            defer: false
+        )
         self.images = images
         self.onSave = onSave
         self.onClose = onClose
         super.init()
-        configureOverlay(captions: captions)
+        configureWindow(captions: captions)
     }
 
-    private func configureOverlay(captions: [CharacterStage: String]) {
+    private func configureWindow(captions: [CharacterStage: String]) {
+        editorWindow.title = "定制三阶段形象"
+        editorWindow.isReleasedWhenClosed = false
+        editorWindow.level = .normal
+        editorWindow.hidesOnDeactivate = false
+        editorWindow.collectionBehavior = [.canJoinAllApplications, .moveToActiveSpace, .transient]
+        editorWindow.delegate = self
+
+        let overlay = NSVisualEffectView()
         overlay.material = .popover
         overlay.blendingMode = .withinWindow
         overlay.state = .active
@@ -111,6 +123,7 @@ private final class CharacterPackEditorController: NSObject, NSTextFieldDelegate
         overlay.layer?.cornerRadius = 18
         overlay.layer?.cornerCurve = .continuous
         overlay.layer?.masksToBounds = true
+        editorWindow.contentView = overlay
 
         let title = NSTextField(labelWithString: "让形象和文案随答题时间一起变化")
         title.font = .systemFont(ofSize: 18, weight: .bold)
@@ -237,8 +250,7 @@ private final class CharacterPackEditorController: NSObject, NSTextFieldDelegate
         picker.level = .floating
         picker.collectionBehavior = [.canJoinAllSpaces, .canJoinAllApplications, .transient]
 
-        guard let hostPanel else { return }
-        picker.beginSheetModal(for: hostPanel) { [weak self] response in
+        picker.beginSheetModal(for: editorWindow) { [weak self] response in
             guard response == .OK,
                   let self,
                   let sourceURL = picker.url,
@@ -273,55 +285,45 @@ private final class CharacterPackEditorController: NSObject, NSTextFieldDelegate
         guard let hostPanel else { return }
         if isVisible {
             NSApp.activate(ignoringOtherApps: true)
-            hostPanel.makeKeyAndOrderFront(nil)
+            editorWindow.makeKeyAndOrderFront(nil)
             return
         }
 
         previousApplication = NSWorkspace.shared.frontmostApplication
-        originalFrame = hostPanel.frame
-        originalPanelLevel = hostPanel.level
-        var expandedFrame = hostPanel.frame
-        expandedFrame.origin.x = expandedFrame.maxX - 650
-        expandedFrame.origin.y = expandedFrame.maxY - 430
-        expandedFrame.size = NSSize(width: 650, height: 430)
-        hostPanel.setFrame(expandedFrame, display: true, animate: true)
-
-        guard let contentView = hostPanel.contentView else { return }
-        overlay.translatesAutoresizingMaskIntoConstraints = false
-        contentView.addSubview(overlay)
-        NSLayoutConstraint.activate([
-            overlay.leadingAnchor.constraint(equalTo: contentView.leadingAnchor, constant: 6),
-            overlay.trailingAnchor.constraint(equalTo: contentView.trailingAnchor, constant: -6),
-            overlay.topAnchor.constraint(equalTo: contentView.topAnchor, constant: 6),
-            overlay.bottomAnchor.constraint(equalTo: contentView.bottomAnchor, constant: -6)
-        ])
         isVisible = true
         startObservingSpaceChanges()
-        hostPanel.level = .normal
-        hostPanel.becomesKeyOnlyIfNeeded = false
+        positionEditorWindow(relativeTo: hostPanel)
+        hostPanel.orderOut(nil)
         NSApp.activate(ignoringOtherApps: true)
-        hostPanel.makeKeyAndOrderFront(nil)
+        editorWindow.makeKeyAndOrderFront(nil)
     }
 
     private func close() {
+        editorWindow.close()
+    }
+
+    func windowWillClose(_ notification: Notification) {
+        guard isVisible else { return }
         stopObservingSpaceChanges()
-        hostPanel?.endEditing(for: nil)
-        overlay.removeFromSuperview()
-        if let hostPanel, let originalFrame {
-            hostPanel.becomesKeyOnlyIfNeeded = true
-            hostPanel.level = originalPanelLevel ?? .statusBar
-            hostPanel.setFrame(originalFrame, display: true, animate: true)
-        }
         let applicationToRestore = previousApplication
-        originalFrame = nil
-        originalPanelLevel = nil
         previousApplication = nil
         activeCaptionField = nil
         isVisible = false
+        hostPanel?.orderFront(nil)
         onClose()
         DispatchQueue.main.async {
             applicationToRestore?.activate(options: [.activateIgnoringOtherApps])
         }
+    }
+
+    private func positionEditorWindow(relativeTo hostPanel: NSWindow) {
+        let screenFrame = (hostPanel.screen ?? NSScreen.main)?.visibleFrame ?? hostPanel.frame
+        let size = editorWindow.frame.size
+        let origin = NSPoint(
+            x: screenFrame.midX - size.width / 2,
+            y: screenFrame.midY - size.height / 2
+        )
+        editorWindow.setFrameOrigin(origin)
     }
 
     func controlTextDidBeginEditing(_ notification: Notification) {
@@ -348,11 +350,12 @@ private final class CharacterPackEditorController: NSObject, NSTextFieldDelegate
     }
 
     private func restoreEditingFocusAfterSpaceChange() {
-        guard isVisible, let hostPanel, hostPanel.attachedSheet == nil else { return }
+        guard isVisible, editorWindow.attachedSheet == nil else { return }
+        editorWindow.orderOut(nil)
         NSApp.activate(ignoringOtherApps: true)
-        hostPanel.makeKeyAndOrderFront(nil)
+        editorWindow.makeKeyAndOrderFront(nil)
         if let activeCaptionField {
-            hostPanel.makeFirstResponder(activeCaptionField)
+            editorWindow.makeFirstResponder(activeCaptionField)
         }
     }
 
