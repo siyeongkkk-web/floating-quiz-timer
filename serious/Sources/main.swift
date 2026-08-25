@@ -101,7 +101,7 @@ private final class CharacterPackEditorController: NSObject, NSWindowDelegate {
         window.title = "定制三阶段形象"
         window.isReleasedWhenClosed = false
         window.level = .floating
-        window.collectionBehavior = [.canJoinAllSpaces, .fullScreenAuxiliary]
+        window.collectionBehavior = [.canJoinAllSpaces, .canJoinAllApplications, .transient]
 
         let background = NSVisualEffectView()
         background.material = .popover
@@ -230,6 +230,8 @@ private final class CharacterPackEditorController: NSObject, NSWindowDelegate {
         picker.canChooseFiles = true
         picker.allowsMultipleSelection = false
         picker.allowedContentTypes = [.image]
+        picker.level = .floating
+        picker.collectionBehavior = [.canJoinAllSpaces, .canJoinAllApplications, .transient]
 
         picker.beginSheetModal(for: window) { [weak self] response in
             guard response == .OK,
@@ -342,7 +344,7 @@ final class FloatingTimerController: NSObject, NSComboBoxDelegate {
         panel.becomesKeyOnlyIfNeeded = true
         panel.collectionBehavior = [
             .canJoinAllSpaces,
-            .fullScreenAuxiliary,
+            .canJoinAllApplications,
             .transient,
             .stationary,
             .ignoresCycle

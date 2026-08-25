@@ -27,5 +27,6 @@ cp "$PROJECT_ROOT/serious/Resources/AppIcon.icns" "$SERIOUS_APP/Contents/Resourc
 /usr/bin/codesign --force --deep --sign - "$SERIOUS_APP"
 
 /usr/bin/codesign --verify --deep --strict "$SERIOUS_APP"
+"/System/Library/Frameworks/CoreServices.framework/Frameworks/LaunchServices.framework/Support/lsregister" -f "$SERIOUS_APP"
 
 print "构建完成：$OUTPUT_ROOT"
