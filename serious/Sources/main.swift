@@ -15,6 +15,10 @@ final class SelectAllComboBox: NSComboBox {
     }
 }
 
+final class PanelTextField: NSTextField {
+    override var needsPanelToBecomeKey: Bool { true }
+}
+
 private enum CharacterStage: Int, CaseIterable {
     case calm
     case halfway
@@ -72,6 +76,7 @@ private final class CharacterPackEditorController: NSObject {
     private let overlay = NSVisualEffectView()
     private var originalFrame: NSRect?
     private var isVisible = false
+    private var previousApplication: NSRunningApplication?
     private var images: [CharacterStage: NSImage]
     private var imageViews: [CharacterStage: NSImageView] = [:]
     private var chooseButtons: [CharacterStage: NSButton] = [:]
@@ -184,7 +189,7 @@ private final class CharacterPackEditorController: NSObject {
         captionLabel.font = .systemFont(ofSize: 10, weight: .medium)
         captionLabel.textColor = .secondaryLabelColor
 
-        let captionField = NSTextField(string: caption)
+        let captionField = PanelTextField(string: caption)
         captionField.placeholderString = stage.defaultCaption
         captionField.font = .systemFont(ofSize: 12)
         captionField.translatesAutoresizingMaskIntoConstraints = false
@@ -263,10 +268,12 @@ private final class CharacterPackEditorController: NSObject {
     func show() {
         guard let hostPanel else { return }
         if isVisible {
+            NSApp.activate(ignoringOtherApps: true)
             hostPanel.makeKeyAndOrderFront(nil)
             return
         }
 
+        previousApplication = NSWorkspace.shared.frontmostApplication
         originalFrame = hostPanel.frame
         var expandedFrame = hostPanel.frame
         expandedFrame.origin.x = expandedFrame.maxX - 650
@@ -284,17 +291,26 @@ private final class CharacterPackEditorController: NSObject {
             overlay.bottomAnchor.constraint(equalTo: contentView.bottomAnchor, constant: -6)
         ])
         isVisible = true
+        hostPanel.becomesKeyOnlyIfNeeded = false
+        NSApp.activate(ignoringOtherApps: true)
         hostPanel.makeKeyAndOrderFront(nil)
     }
 
     private func close() {
+        hostPanel?.endEditing(for: nil)
         overlay.removeFromSuperview()
         if let hostPanel, let originalFrame {
+            hostPanel.becomesKeyOnlyIfNeeded = true
             hostPanel.setFrame(originalFrame, display: true, animate: true)
         }
+        let applicationToRestore = previousApplication
         originalFrame = nil
+        previousApplication = nil
         isVisible = false
         onClose()
+        DispatchQueue.main.async {
+            applicationToRestore?.activate(options: [.activateIgnoringOtherApps])
+        }
     }
 }
 
