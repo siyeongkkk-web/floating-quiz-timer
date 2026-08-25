@@ -67,8 +67,11 @@ private struct CharacterPackConfig: Codable {
     var captions: [String: String]
 }
 
-private final class CharacterPackEditorController: NSObject, NSWindowDelegate {
-    private let window: NSPanel
+private final class CharacterPackEditorController: NSObject {
+    private weak var hostPanel: ActivatingFloatingPanel?
+    private let overlay = NSVisualEffectView()
+    private var originalFrame: NSRect?
+    private var isVisible = false
     private var images: [CharacterStage: NSImage]
     private var imageViews: [CharacterStage: NSImageView] = [:]
     private var chooseButtons: [CharacterStage: NSButton] = [:]
@@ -78,36 +81,28 @@ private final class CharacterPackEditorController: NSObject, NSWindowDelegate {
     private let onClose: () -> Void
 
     init(
+        hostPanel: ActivatingFloatingPanel,
         images: [CharacterStage: NSImage],
         captions: [CharacterStage: String],
         onSave: @escaping ([CharacterStage: NSImage], [CharacterStage: String]) -> Bool,
         onClose: @escaping () -> Void
     ) {
+        self.hostPanel = hostPanel
         self.images = images
         self.onSave = onSave
         self.onClose = onClose
-        window = NSPanel(
-            contentRect: NSRect(x: 0, y: 0, width: 650, height: 430),
-            styleMask: [.titled, .closable],
-            backing: .buffered,
-            defer: false
-        )
         super.init()
-        window.delegate = self
-        configureWindow(captions: captions)
+        configureOverlay(captions: captions)
     }
 
-    private func configureWindow(captions: [CharacterStage: String]) {
-        window.title = "定制三阶段形象"
-        window.isReleasedWhenClosed = false
-        window.level = .floating
-        window.collectionBehavior = [.canJoinAllSpaces, .canJoinAllApplications, .transient]
-
-        let background = NSVisualEffectView()
-        background.material = .popover
-        background.blendingMode = .behindWindow
-        background.state = .active
-        window.contentView = background
+    private func configureOverlay(captions: [CharacterStage: String]) {
+        overlay.material = .popover
+        overlay.blendingMode = .withinWindow
+        overlay.state = .active
+        overlay.wantsLayer = true
+        overlay.layer?.cornerRadius = 18
+        overlay.layer?.cornerCurve = .continuous
+        overlay.layer?.masksToBounds = true
 
         let title = NSTextField(labelWithString: "让形象和文案随答题时间一起变化")
         title.font = .systemFont(ofSize: 18, weight: .bold)
@@ -140,13 +135,13 @@ private final class CharacterPackEditorController: NSObject, NSWindowDelegate {
         root.spacing = 10
         root.edgeInsets = NSEdgeInsets(top: 20, left: 22, bottom: 18, right: 22)
         root.translatesAutoresizingMaskIntoConstraints = false
-        background.addSubview(root)
+        overlay.addSubview(root)
 
         NSLayoutConstraint.activate([
-            root.leadingAnchor.constraint(equalTo: background.leadingAnchor),
-            root.trailingAnchor.constraint(equalTo: background.trailingAnchor),
-            root.topAnchor.constraint(equalTo: background.topAnchor),
-            root.bottomAnchor.constraint(equalTo: background.bottomAnchor),
+            root.leadingAnchor.constraint(equalTo: overlay.leadingAnchor),
+            root.trailingAnchor.constraint(equalTo: overlay.trailingAnchor),
+            root.topAnchor.constraint(equalTo: overlay.topAnchor),
+            root.bottomAnchor.constraint(equalTo: overlay.bottomAnchor),
             footer.heightAnchor.constraint(equalToConstant: 32)
         ])
         updateSaveButton()
@@ -233,7 +228,8 @@ private final class CharacterPackEditorController: NSObject, NSWindowDelegate {
         picker.level = .floating
         picker.collectionBehavior = [.canJoinAllSpaces, .canJoinAllApplications, .transient]
 
-        picker.beginSheetModal(for: window) { [weak self] response in
+        guard let hostPanel else { return }
+        picker.beginSheetModal(for: hostPanel) { [weak self] response in
             guard response == .OK,
                   let self,
                   let sourceURL = picker.url,
@@ -257,20 +253,47 @@ private final class CharacterPackEditorController: NSObject, NSWindowDelegate {
             captions[stage] = value.isEmpty ? stage.defaultCaption : value
         }
         guard onSave(images, captions) else { return }
-        window.close()
+        close()
     }
 
     @objc private func cancel() {
-        window.close()
+        close()
     }
 
     func show() {
-        window.center()
-        window.makeKeyAndOrderFront(nil)
-        NSApp.activate(ignoringOtherApps: true)
+        guard let hostPanel else { return }
+        if isVisible {
+            hostPanel.makeKeyAndOrderFront(nil)
+            return
+        }
+
+        originalFrame = hostPanel.frame
+        var expandedFrame = hostPanel.frame
+        expandedFrame.origin.x = expandedFrame.maxX - 650
+        expandedFrame.origin.y = expandedFrame.maxY - 430
+        expandedFrame.size = NSSize(width: 650, height: 430)
+        hostPanel.setFrame(expandedFrame, display: true, animate: true)
+
+        guard let contentView = hostPanel.contentView else { return }
+        overlay.translatesAutoresizingMaskIntoConstraints = false
+        contentView.addSubview(overlay)
+        NSLayoutConstraint.activate([
+            overlay.leadingAnchor.constraint(equalTo: contentView.leadingAnchor, constant: 6),
+            overlay.trailingAnchor.constraint(equalTo: contentView.trailingAnchor, constant: -6),
+            overlay.topAnchor.constraint(equalTo: contentView.topAnchor, constant: 6),
+            overlay.bottomAnchor.constraint(equalTo: contentView.bottomAnchor, constant: -6)
+        ])
+        isVisible = true
+        hostPanel.makeKeyAndOrderFront(nil)
     }
 
-    func windowWillClose(_ notification: Notification) {
+    private func close() {
+        overlay.removeFromSuperview()
+        if let hostPanel, let originalFrame {
+            hostPanel.setFrame(originalFrame, display: true, animate: true)
+        }
+        originalFrame = nil
+        isVisible = false
         onClose()
     }
 }
@@ -770,7 +793,12 @@ final class FloatingTimerController: NSObject, NSComboBoxDelegate {
             return
         }
 
+        if historyOverlay != nil {
+            hideQuestionHistory()
+        }
+
         let editor = CharacterPackEditorController(
+            hostPanel: panel,
             images: characterImages,
             captions: characterCaptions
         ) { [weak self] images, captions in
