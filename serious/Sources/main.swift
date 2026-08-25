@@ -75,6 +75,7 @@ private final class CharacterPackEditorController: NSObject {
     private weak var hostPanel: ActivatingFloatingPanel?
     private let overlay = NSVisualEffectView()
     private var originalFrame: NSRect?
+    private var originalPanelLevel: NSWindow.Level?
     private var isVisible = false
     private var previousApplication: NSRunningApplication?
     private var images: [CharacterStage: NSImage]
@@ -275,6 +276,7 @@ private final class CharacterPackEditorController: NSObject {
 
         previousApplication = NSWorkspace.shared.frontmostApplication
         originalFrame = hostPanel.frame
+        originalPanelLevel = hostPanel.level
         var expandedFrame = hostPanel.frame
         expandedFrame.origin.x = expandedFrame.maxX - 650
         expandedFrame.origin.y = expandedFrame.maxY - 430
@@ -291,6 +293,7 @@ private final class CharacterPackEditorController: NSObject {
             overlay.bottomAnchor.constraint(equalTo: contentView.bottomAnchor, constant: -6)
         ])
         isVisible = true
+        hostPanel.level = .normal
         hostPanel.becomesKeyOnlyIfNeeded = false
         NSApp.activate(ignoringOtherApps: true)
         hostPanel.makeKeyAndOrderFront(nil)
@@ -301,10 +304,12 @@ private final class CharacterPackEditorController: NSObject {
         overlay.removeFromSuperview()
         if let hostPanel, let originalFrame {
             hostPanel.becomesKeyOnlyIfNeeded = true
+            hostPanel.level = originalPanelLevel ?? .statusBar
             hostPanel.setFrame(originalFrame, display: true, animate: true)
         }
         let applicationToRestore = previousApplication
         originalFrame = nil
+        originalPanelLevel = nil
         previousApplication = nil
         isVisible = false
         onClose()
