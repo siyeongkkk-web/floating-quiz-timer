@@ -23,7 +23,7 @@ xcrun swiftc \
   "$PROJECT_ROOT/serious/Sources/main.swift" \
   -o "$SERIOUS_APP/Contents/MacOS/FloatingQuizTimer"
 cp "$PROJECT_ROOT/serious/Info.plist" "$SERIOUS_APP/Contents/Info.plist"
-cp "$PROJECT_ROOT/serious/Resources/AppIcon.icns" "$SERIOUS_APP/Contents/Resources/AppIcon.icns"
+cp "$PROJECT_ROOT/serious/Resources/AppIcon.icns" "$SERIOUS_APP/Contents/Resources/FloatingQuizTimer.icns"
 /usr/bin/codesign --force --deep --sign - "$SERIOUS_APP"
 
 /usr/bin/codesign --verify --deep --strict "$SERIOUS_APP"

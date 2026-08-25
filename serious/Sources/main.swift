@@ -991,7 +991,7 @@ final class AppDelegate: NSObject, NSApplicationDelegate {
     }
 
     private func applyDockIcon() {
-        guard let iconURL = Bundle.main.url(forResource: "AppIcon", withExtension: "icns"),
+        guard let iconURL = Bundle.main.url(forResource: "FloatingQuizTimer", withExtension: "icns"),
               let icon = NSImage(contentsOf: iconURL) else { return }
         NSApp.applicationIconImage = icon
     }
